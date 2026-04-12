@@ -85,63 +85,71 @@ BITMAPV5HEADER v5Header = {
 	.bV5Reserved = 0
 };
 
-// argv: {'generator', text color, bg color, text to be generated}
+/*
+============ Update plan ============
+
+- Remove magic numbers
+	- Hardcoded string sizes mainly
+- Fully custom capitalization
+- Include all (printable) ASCII
+	- '_' can't be used as spaces
+- Styling: Margins and sizing
+- Make character files use 0x0 and 0x1, not '0' and '1'
+- Better error handling
+	- Auto build generated/ if it doesn't exist
+	- Usage message
+
+*/
+
+typedef enum {
+	ERR_NONE,
+	ERR_INVALID_FLAG,
+	ERR_MARGIN_SETTINGS,
+} ErrorType;
+
+ErrorType applyMargins(int *margins, char *marginInfo) {
+	char *top = strtok(marginInfo, ":");
+	char *bot = strtok(NULL, ":");
+	char *left = strtok(NULL, ":");
+	char *right = strtok(NULL, "");
+	printf("%s %s %s %s\n", top, bot, left, right);
+	return ERR_NONE;
+}
+
+void printerr(ErrorType type) {
+	switch (type) {
+		case ERR_INVALID_FLAG:
+			fprintf(stderr, "\x1b[1m\x1b[91merror: One or more flag did not match any valid flag\n\x1b[0m\x1b[37m");
+			break;
+		case ERR_MARGIN_SETTINGS:
+			fprintf(stderr, "\x1b[1m\x1b[91merror: Margin (-m) settings invalid. Use format: -m top:bot:left:right (all must be unsigned integers)\n\x1b[0m\x1b[37m");
+			break;
+	}
+}
+
+
 int main(int argc, char *argv[]) {
-	if (argc != 5) {
-		return 1;
-	}
-	
-	char mode = argv[1][0];
-	uint32_t fgColor = strtoul(argv[2], NULL, 16);
-	uint32_t bgColor = strtoul(argv[3], NULL, 16);
-	// go through all characters in the input text
-	int rowSize = strlen(argv[4])*6; // in pixels
-	uint32_t pixels[9][rowSize];
-	char prevChar = '_'; // first character should be uppercase, so we need a fake space before.
-	for (int charID = 0; charID < strlen(argv[4]); charID++) {
-		// makes the path to the character file that has the info for the bitmap, opens it.
-		char characterPath[23] = "characters_";
-		// if the last character is a space, make this character uppercase to achieve titlecase
-		if (prevChar == '_' || mode == 'C') {
-			strcat(characterPath, "upper/ .txt");
-		} else {
-			strcat(characterPath, "lower/ .txt");
-		}
-		prevChar = argv[4][charID];
-		characterPath[17] = argv[4][charID];
-		FILE *characterFile = fopen(characterPath, "r");
-		
-		// build pixel array for current character.
-		for (int row = 0; row < 9; row++) {
-			for (int pixel = 0; pixel < 6; pixel++) {
-				int currentPixel = fgetc(characterFile);
-				if (currentPixel == '0') {
-					pixels[row][(charID*6) + pixel] = bgColor;
+	int margins[] = {0, 0, 0, 0};
+	for (int i = 1; i < argc; i++) {
+		// flag handling
+		if (argv[i][0] == '-') {
+			ErrorType err = ERR_NONE;
+			if (strcmp(argv[i], "-m") == 0) {
+				if (i == argc) { // requires argument after
+					err = ERR_MARGIN_SETTINGS;
 				} else {
-					pixels[row][(charID*6) + pixel] = fgColor;
+					err = applyMargins(margins, argv[i + 1]);
 				}
+			} else {
+				// failed to match a flag
+				err = ERR_INVALID_FLAG;
 			}
-			fgetc(characterFile); // remove the newline
+			if (err != ERR_NONE) {
+				printerr(err);
+				return 1;
+			}
 		}
-		fclose(characterFile);
 	}
-	
-	// finish header
-	v5Header.bV5Width = rowSize;
-	fileHeader.bfSize = fileHeader.bfOffBits + ((v5Header.bV5Width * v5Header.bV5Height) * 4);
-	
-	// Form filename with same name as input text
-	char outputFilename[strlen(argv[4])+15];
-	strcpy(outputFilename, "generated/");
-	strcat(outputFilename, argv[4]);
-	strcat(outputFilename, ".bmp");
-	
-	// Write to file
-	FILE *bitmap = fopen(outputFilename, "wb");
-	fwrite(&fileHeader, sizeof(fileHeader), 1, bitmap);
-	fwrite(&v5Header, sizeof(v5Header), 1, bitmap);
-	fwrite(pixels, sizeof(uint32_t), sizeof(pixels)/sizeof(uint32_t), bitmap);
-	fclose(bitmap);
 	
 	return 0;
 }
