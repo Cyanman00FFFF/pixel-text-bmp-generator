@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <limits.h>
 
 #pragma pack(push, 1)
 
@@ -107,23 +109,45 @@ typedef enum {
 	ERR_MARGIN_SETTINGS,
 } ErrorType;
 
+
+const int MARGIN_CAP = 1024; // How many pixels of margin are allowed in any one direction. Must be greater than 0 and less than INT_MAX.
+
 ErrorType applyMargins(int *margins, char *marginInfo) {
-	char *top = strtok(marginInfo, ":");
-	char *bot = strtok(NULL, ":");
-	char *left = strtok(NULL, ":");
-	char *right = strtok(NULL, "");
-	printf("%s %s %s %s\n", top, bot, left, right);
+	// store the margin info in a new variable to avoid overwriting argv
+	char tempMargin[strlen(marginInfo)]; 
+	strcpy(tempMargin, marginInfo);
+	char *pTempMargin = &tempMargin[0]; // pointer for use with strtol
+	
+	for (int i = 0; i < 4; i++) {
+		char *end; // pointer to next character after last converted by strtol
+		const long marginCheck = strtol(pTempMargin, &end, 10);
+		
+		// there needs to be four margins. if pTempMargin is at end, then there was a number that was undetected.
+		if (pTempMargin == end) {
+			return ERR_MARGIN_SETTINGS;
+		}
+		
+		if (marginCheck < 0 || marginCheck > MARGIN_CAP) {
+			return ERR_MARGIN_SETTINGS;
+		}
+		
+		pTempMargin = end + 1; // + 1 to ignore ':'
+		margins[i] = marginCheck;
+	}
+	
 	return ERR_NONE;
 }
 
 void printerr(ErrorType type) {
 	switch (type) {
-		case ERR_INVALID_FLAG:
+		case ERR_INVALID_FLAG: {
 			fprintf(stderr, "\x1b[1m\x1b[91merror: One or more flag did not match any valid flag\n\x1b[0m\x1b[37m");
 			break;
-		case ERR_MARGIN_SETTINGS:
-			fprintf(stderr, "\x1b[1m\x1b[91merror: Margin (-m) settings invalid. Use format: -m top:bot:left:right (all must be unsigned integers)\n\x1b[0m\x1b[37m");
+		}
+		case ERR_MARGIN_SETTINGS: {
+			fprintf(stderr, "\x1b[1m\x1b[91merror: Margin (-m) settings invalid.\nUsage: -m top:bot:left:right (all must be unsigned integers 0-%d)\n\x1b[0m\x1b[37m", MARGIN_CAP);
 			break;
+		}
 	}
 }
 
@@ -135,7 +159,7 @@ int main(int argc, char *argv[]) {
 		if (argv[i][0] == '-') {
 			ErrorType err = ERR_NONE;
 			if (strcmp(argv[i], "-m") == 0) {
-				if (i == argc) { // requires argument after
+				if (i == argc - 1) { // requires argument after
 					err = ERR_MARGIN_SETTINGS;
 				} else {
 					err = applyMargins(margins, argv[i + 1]);
