@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <limits.h>
 
 #pragma pack(push, 1)
 
@@ -107,23 +109,41 @@ typedef enum {
 	ERR_MARGIN_SETTINGS,
 } ErrorType;
 
+
+const int MARGIN_CAP = 1024; // How many pixels of margin are allowed in any one direction. Must be greater than 0 and less than INT_MAX.
+
 ErrorType applyMargins(int *margins, char *marginInfo) {
-	char *top = strtok(marginInfo, ":");
-	char *bot = strtok(NULL, ":");
-	char *left = strtok(NULL, ":");
-	char *right = strtok(NULL, "");
-	printf("%s %s %s %s\n", top, bot, left, right);
+	char tempMargin[sizeof(marginInfo)];
+	strncpy(tempMargin, marginInfo, sizeof(marginInfo));
+	char * pTempMargin = &tempMargin[0];
+	
+	for (int i = 0; i < 4; i++) {
+		char *end;
+		const long marginCheck = strtol(tempMargin, &end, 10);
+		if (tempMargin == end && i < 3) {
+			return ERR_MARGIN_SETTINGS;
+		}
+		
+		if (marginCheck < 0 || marginCheck > MARGIN_CAP) {
+			return ERR_MARGIN_SETTINGS;
+		}
+		pTempMargin = end;
+		margins[i] = marginCheck;
+	}
+	printf("%d %d %d %d\n", margins[0], margins[1], margins[2], margins[3]);
 	return ERR_NONE;
 }
 
 void printerr(ErrorType type) {
 	switch (type) {
-		case ERR_INVALID_FLAG:
+		case ERR_INVALID_FLAG: {
 			fprintf(stderr, "\x1b[1m\x1b[91merror: One or more flag did not match any valid flag\n\x1b[0m\x1b[37m");
 			break;
-		case ERR_MARGIN_SETTINGS:
-			fprintf(stderr, "\x1b[1m\x1b[91merror: Margin (-m) settings invalid. Use format: -m top:bot:left:right (all must be unsigned integers)\n\x1b[0m\x1b[37m");
+		}
+		case ERR_MARGIN_SETTINGS: {
+			fprintf(stderr, "\x1b[1m\x1b[91merror: Margin (-m) settings invalid. Use format: -m top:bot:left:right (all must be unsigned integers 0-%d)\n\x1b[0m\x1b[37m", MARGIN_CAP);
 			break;
+		}
 	}
 }
 
@@ -135,7 +155,7 @@ int main(int argc, char *argv[]) {
 		if (argv[i][0] == '-') {
 			ErrorType err = ERR_NONE;
 			if (strcmp(argv[i], "-m") == 0) {
-				if (i == argc) { // requires argument after
+				if (i == argc - 1) { // requires argument after
 					err = ERR_MARGIN_SETTINGS;
 				} else {
 					err = applyMargins(margins, argv[i + 1]);
