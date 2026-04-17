@@ -113,24 +113,28 @@ typedef enum {
 const int MARGIN_CAP = 1024; // How many pixels of margin are allowed in any one direction. Must be greater than 0 and less than INT_MAX.
 
 ErrorType applyMargins(int *margins, char *marginInfo) {
-	char tempMargin[sizeof(marginInfo)];
-	strncpy(tempMargin, marginInfo, sizeof(marginInfo));
-	char * pTempMargin = &tempMargin[0];
+	// store the margin info in a new variable to avoid overwriting argv
+	char tempMargin[strlen(marginInfo)]; 
+	strcpy(tempMargin, marginInfo);
+	char *pTempMargin = &tempMargin[0]; // pointer for use with strtol
 	
 	for (int i = 0; i < 4; i++) {
-		char *end;
-		const long marginCheck = strtol(tempMargin, &end, 10);
-		if (tempMargin == end && i < 3) {
+		char *end; // pointer to next character after last converted by strtol
+		const long marginCheck = strtol(pTempMargin, &end, 10);
+		
+		// there needs to be four margins. if pTempMargin is at end, then there was a number that was undetected.
+		if (pTempMargin == end) {
 			return ERR_MARGIN_SETTINGS;
 		}
 		
 		if (marginCheck < 0 || marginCheck > MARGIN_CAP) {
 			return ERR_MARGIN_SETTINGS;
 		}
-		pTempMargin = end;
+		
+		pTempMargin = end + 1; // + 1 to ignore ':'
 		margins[i] = marginCheck;
 	}
-	printf("%d %d %d %d\n", margins[0], margins[1], margins[2], margins[3]);
+	
 	return ERR_NONE;
 }
 
@@ -141,7 +145,7 @@ void printerr(ErrorType type) {
 			break;
 		}
 		case ERR_MARGIN_SETTINGS: {
-			fprintf(stderr, "\x1b[1m\x1b[91merror: Margin (-m) settings invalid. Use format: -m top:bot:left:right (all must be unsigned integers 0-%d)\n\x1b[0m\x1b[37m", MARGIN_CAP);
+			fprintf(stderr, "\x1b[1m\x1b[91merror: Margin (-m) settings invalid.\nUsage: -m top:bot:left:right (all must be unsigned integers 0-%d)\n\x1b[0m\x1b[37m", MARGIN_CAP);
 			break;
 		}
 	}
