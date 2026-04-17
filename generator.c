@@ -2,8 +2,6 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
-#include <errno.h>
-#include <limits.h>
 
 #pragma pack(push, 1)
 
@@ -107,10 +105,17 @@ typedef enum {
 	ERR_NONE,
 	ERR_INVALID_FLAG,
 	ERR_MARGIN_SETTINGS,
+	ERR_FOREGROUND_COLOR,
+	ERR_BACKGROUND_COLOR,
 } ErrorType;
 
+typedef struct {
+	ErrorType type;
+	char *excerpt;
+} ErrorInfo;
 
 const int MARGIN_CAP = 1024; // How many pixels of margin are allowed in any one direction. Must be greater than 0 and less than INT_MAX.
+
 
 ErrorType applyMargins(int *margins, char *marginInfo) {
 	// store the margin info in a new variable to avoid overwriting argv
@@ -138,14 +143,20 @@ ErrorType applyMargins(int *margins, char *marginInfo) {
 	return ERR_NONE;
 }
 
-void printerr(ErrorType type) {
-	switch (type) {
+void printerr(ErrorInfo info) {
+	switch (info.type) {
 		case ERR_INVALID_FLAG: {
-			fprintf(stderr, "\x1b[1m\x1b[91merror: One or more flag did not match any valid flag\n\x1b[0m\x1b[37m");
+			fprintf(stderr, "\x1b[1m\x1b[91merror: Flag '%s' did not match any valid flag\n\x1b[0m\x1b[37m", info.excerpt);
 			break;
 		}
 		case ERR_MARGIN_SETTINGS: {
-			fprintf(stderr, "\x1b[1m\x1b[91merror: Margin (-m) settings invalid.\nUsage: -m top:bot:left:right (all must be unsigned integers 0-%d)\n\x1b[0m\x1b[37m", MARGIN_CAP);
+			fprintf(stderr, "\x1b[1m\x1b[91merror: Margin (-m) input '%s' invalid. expected: top:bot:left:right (all must be unsigned integers 0-%d)\n\x1b[0m\x1b[37m", info.excerpt, MARGIN_CAP);
+			break;
+		} case ERR_FOREGROUND_COLOR: {
+			fprintf(stderr, "\x1b[1m\x1b[91merror: foreground color input '%s' invalid. expected: 8-digit hexadecimal unsigned integer\n  ex: 202020FF", info.excerpt);
+			break;
+		} case ERR_BACKGROUND_COLOR: {
+			fprintf(stderr, "\x1b[1m\x1b[91merror: background color input '%s' invalid. expected: 8-digit hexadecimal unsigned integer\n  ex: 202020FF", info.excerpt);
 			break;
 		}
 	}
@@ -153,27 +164,54 @@ void printerr(ErrorType type) {
 
 
 int main(int argc, char *argv[]) {
+	// set defaults
 	int margins[] = {0, 0, 0, 0};
+	uint32_t fgColor = 0xFFFFFFFF;
+	uint32_t bgColor = 0x000000FF;
+	
+	ErrorInfo errInfo = {.type = ERR_NONE, .excerpt = char [256]};
+	
 	for (int i = 1; i < argc; i++) {
+		
 		// flag handling
 		if (argv[i][0] == '-') {
-			ErrorType err = ERR_NONE;
 			if (strcmp(argv[i], "-m") == 0) {
+				
 				if (i == argc - 1) { // requires argument after
 					err = ERR_MARGIN_SETTINGS;
 				} else {
 					err = applyMargins(margins, argv[i + 1]);
 				}
+				
+			} else if (strcmp(argv[i], "--fg") == 0) {
+				
+				if (i == argc - 1) { // requires argument after
+					err = ERR_FOREGROUND_COLOR;
+				} else {
+					err = applyColor(&fgColor, argv[i + 1]);
+				}
+				
+			} else if (strcmp(argv[i], "--bg") == 0) {
+				
+				if (i == argc - 1) { // requires argument after
+					err = ERR_BACKGROUND_COLOR;
+				} else {
+					err = applyColor(&bgColor, argv[i + 1]);
+				}
+				
 			} else {
 				// failed to match a flag
 				err = ERR_INVALID_FLAG;
 			}
+			
 			if (err != ERR_NONE) {
-				printerr(err);
+				printerr(errInfo);
 				return 1;
 			}
 		}
+		
 	}
+	
 	
 	return 0;
 }
