@@ -105,8 +105,7 @@ typedef enum {
 	ERR_NONE,
 	ERR_INVALID_FLAG,
 	ERR_MARGIN_SETTINGS,
-	ERR_FOREGROUND_COLOR,
-	ERR_BACKGROUND_COLOR,
+	ERR_COLOR_VALUE,
 } ErrorType;
 
 typedef struct {
@@ -117,31 +116,50 @@ typedef struct {
 const int MARGIN_CAP = 1024; // How many pixels of margin are allowed in any one direction. Must be greater than 0 and less than INT_MAX.
 
 
-ErrorType applyMargins(int *margins, char *marginInfo) {
-	// store the margin info in a new variable to avoid overwriting argv
-	char tempMargin[strlen(marginInfo)]; 
-	strcpy(tempMargin, marginInfo);
-	char *pTempMargin = &tempMargin[0]; // pointer for use with strtol
+ErrorInfo applyMargins(int *margins, char *marginInfo) {
+	ErrorInfo errInfo = (ErrorInfo) {ERR_NONE, ""};
+	
+	char *pMarginInfo = &marginInfo[0]; // pointer for use with strtol
 	
 	for (int i = 0; i < 4; i++) {
 		char *end; // pointer to next character after last converted by strtol
-		const long marginCheck = strtol(pTempMargin, &end, 10);
+		const long marginCheck = strtol(pMarginInfo, &end, 10);
 		
-		// there needs to be four margins. if pTempMargin is at end, then there was a number that was undetected.
-		if (pTempMargin == end) {
-			return ERR_MARGIN_SETTINGS;
+		// there needs to be four margins. if pMarginInfo is at end, then there was a number that was undetected.
+		if (pMarginInfo == end || marginCheck < 0 || marginCheck > MARGIN_CAP) {
+			errInfo = (ErrorInfo) {ERR_MARGIN_SETTINGS, marginInfo};
+			return errInfo;
 		}
 		
-		if (marginCheck < 0 || marginCheck > MARGIN_CAP) {
-			return ERR_MARGIN_SETTINGS;
-		}
-		
-		pTempMargin = end + 1; // + 1 to ignore ':'
+		pMarginInfo = end + 1; // + 1 to ignore ':'
 		margins[i] = marginCheck;
 	}
 	
-	return ERR_NONE;
+	return errInfo;
 }
+
+ErrorInfo applyColor(uint32_t color, char *colorInfo) {
+	ErrorInfo errInfo = (ErrorInfo) {ERR_NONE, ""};
+	
+	if (strlen(colorInfo) != 8) {
+		errInfo = (ErrorInfo) {ERR_COLOR_VALUE, colorInfo};
+	}
+	char *pColorInfo = &colorInfo[0]; // pointer for use with strtol
+	
+	char *end; // pointer to next character after last converted by strtol
+	const unsigned long colorCheck = strtoul(pColorInfo, &end, 16);
+	
+	// there needs to be four margins. if pColorInfo is at end, then there was a number that was undetected.
+	if (pColorInfo == end || colorCheck < 0 || colorCheck > 0xFFFFFFFF) {
+		errInfo = (ErrorInfo) {ERR_COLOR_VALUE, colorInfo};
+		return errInfo;
+	}
+	
+	color = colorCheck;
+	
+	return errInfo;
+}
+
 
 void printerr(ErrorInfo info) {
 	switch (info.type) {
@@ -152,11 +170,8 @@ void printerr(ErrorInfo info) {
 		case ERR_MARGIN_SETTINGS: {
 			fprintf(stderr, "\x1b[1m\x1b[91merror: Margin (-m) input '%s' invalid. expected: top:bot:left:right (all must be unsigned integers 0-%d)\n\x1b[0m\x1b[37m", info.excerpt, MARGIN_CAP);
 			break;
-		} case ERR_FOREGROUND_COLOR: {
-			fprintf(stderr, "\x1b[1m\x1b[91merror: foreground color input '%s' invalid. expected: 8-digit hexadecimal unsigned integer\n  ex: 202020FF", info.excerpt);
-			break;
-		} case ERR_BACKGROUND_COLOR: {
-			fprintf(stderr, "\x1b[1m\x1b[91merror: background color input '%s' invalid. expected: 8-digit hexadecimal unsigned integer\n  ex: 202020FF", info.excerpt);
+		} case ERR_COLOR_VALUE: {
+			fprintf(stderr, "\x1b[1m\x1b[91merror: color (--fg or --bg) input '%s' invalid. expected: 8-digit hexadecimal unsigned integer\n\x1b[0m\x1b[37m  ex: 202020FF\n", info.excerpt);
 			break;
 		}
 	}
@@ -169,7 +184,7 @@ int main(int argc, char *argv[]) {
 	uint32_t fgColor = 0xFFFFFFFF;
 	uint32_t bgColor = 0x000000FF;
 	
-	ErrorInfo errInfo = {.type = ERR_NONE, .excerpt = char [256]};
+	ErrorInfo errInfo;
 	
 	for (int i = 1; i < argc; i++) {
 		
@@ -178,39 +193,42 @@ int main(int argc, char *argv[]) {
 			if (strcmp(argv[i], "-m") == 0) {
 				
 				if (i == argc - 1) { // requires argument after
-					err = ERR_MARGIN_SETTINGS;
+					errInfo = (ErrorInfo) {ERR_MARGIN_SETTINGS, ""};
 				} else {
-					err = applyMargins(margins, argv[i + 1]);
+					errInfo = applyMargins(margins, argv[i + 1]);
 				}
 				
 			} else if (strcmp(argv[i], "--fg") == 0) {
 				
 				if (i == argc - 1) { // requires argument after
-					err = ERR_FOREGROUND_COLOR;
+					errInfo = (ErrorInfo) {ERR_COLOR_VALUE, ""};
 				} else {
-					err = applyColor(&fgColor, argv[i + 1]);
+					errInfo = applyColor(fgColor, argv[i + 1]);
 				}
 				
 			} else if (strcmp(argv[i], "--bg") == 0) {
 				
 				if (i == argc - 1) { // requires argument after
-					err = ERR_BACKGROUND_COLOR;
+					errInfo = (ErrorInfo) {ERR_COLOR_VALUE, ""};
 				} else {
-					err = applyColor(&bgColor, argv[i + 1]);
+					errInfo = applyColor(bgColor, argv[i + 1]);
 				}
 				
 			} else {
 				// failed to match a flag
-				err = ERR_INVALID_FLAG;
+				errInfo = (ErrorInfo) {ERR_INVALID_FLAG, argv[i]};
 			}
 			
-			if (err != ERR_NONE) {
+			if (errInfo.type != ERR_NONE) {
 				printerr(errInfo);
 				return 1;
 			}
+		} else {
+			// this arg is a word to convert, increment count, so we know how big the words array needs to be.
+			wordCount++;
 		}
-		
 	}
+	
 	
 	
 	return 0;
