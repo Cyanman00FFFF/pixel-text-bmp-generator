@@ -103,6 +103,8 @@ BITMAPV5HEADER v5Header = {
 
 typedef enum {
 	ERR_NONE,
+	ERR_HELP,
+	ERR_NOARGS,
 	ERR_INVALID_FLAG,
 	ERR_MARGIN_SETTINGS,
 	ERR_COLOR_VALUE,
@@ -163,6 +165,26 @@ ErrorInfo applyColor(uint32_t color, char *colorInfo) {
 
 void printerr(ErrorInfo info) {
 	switch (info.type) {
+		case ERR_HELP: {
+			fprintf(stderr,
+				"usage: generator [-m <margin-settings>] [--fg <color>] [--bg <color>] \"<text>\"\n\n"
+				"  -m <margin-settings>  specify how many pixels to put on each side of the text.\n"
+				"                        format: top:bot:left:right (all must be unsigned integers 0-%d)\n"
+				"  --fg <color>          specify the foreground (text) color as an 8-digit hexadecimal unsigned integer.\n"
+				"  --bg <color>          specify the background color as an 8-digit hexadecimal unsigned integer.\n"
+				"  <text>                the text string to be converted into an image.\n",
+				MARGIN_CAP
+			);
+			break;
+		}
+		case ERR_NOARGS: {
+			fprintf(stderr, 
+				"\x1b[1m\x1b[91merror: No arguments specified (expected at least 1)\n\x1b[0m\x1b[37m"
+				"usage: generator [-m <margin-settings>] [--fg <color>] [--bg <color>] \"<text>\"\n"
+				"see 'generator -h' for full help.\n"
+			);
+			break;
+		}
 		case ERR_INVALID_FLAG: {
 			fprintf(stderr, "\x1b[1m\x1b[91merror: Flag '%s' did not match any valid flag\n\x1b[0m\x1b[37m", info.excerpt);
 			break;
@@ -171,7 +193,7 @@ void printerr(ErrorInfo info) {
 			fprintf(stderr, "\x1b[1m\x1b[91merror: Margin (-m) input '%s' invalid. expected: top:bot:left:right (all must be unsigned integers 0-%d)\n\x1b[0m\x1b[37m", info.excerpt, MARGIN_CAP);
 			break;
 		} case ERR_COLOR_VALUE: {
-			fprintf(stderr, "\x1b[1m\x1b[91merror: color (--fg or --bg) input '%s' invalid. expected: 8-digit hexadecimal unsigned integer\n\x1b[0m\x1b[37m  ex: 202020FF\n", info.excerpt);
+			fprintf(stderr, "\x1b[1m\x1b[91merror: color (--fg or --bg) input '%s' invalid. expected: 8-digit hexadecimal unsigned integer\n\x1b[0m\x1b[37mex: 202020FF\n", info.excerpt);
 			break;
 		}
 	}
@@ -179,6 +201,11 @@ void printerr(ErrorInfo info) {
 
 
 int main(int argc, char *argv[]) {
+	// user specified no arguments, print usage
+	if (argc == 1) {
+		printerr((ErrorInfo) {ERR_NOARGS, ""});
+	}
+	
 	// set defaults
 	int margins[] = {0, 0, 0, 0};
 	uint32_t fgColor = 0xFFFFFFFF;
@@ -186,11 +213,18 @@ int main(int argc, char *argv[]) {
 	
 	ErrorInfo errInfo;
 	
+	
 	for (int i = 1; i < argc; i++) {
 		
-		// flag handling
 		if (argv[i][0] == '-') {
-			if (strcmp(argv[i], "-m") == 0) {
+			// flag handling
+			
+			
+			if (strcmp(argv[i], "-h") == 0) {
+				
+				errInfo = (ErrorInfo) {ERR_HELP, ""};
+				
+			} else if (strcmp(argv[i], "-m") == 0) {
 				
 				if (i == argc - 1) { // requires argument after
 					errInfo = (ErrorInfo) {ERR_MARGIN_SETTINGS, ""};
@@ -223,12 +257,15 @@ int main(int argc, char *argv[]) {
 				printerr(errInfo);
 				return 1;
 			}
+			
+			
 		} else {
-			// this arg is a word to convert, increment count, so we know how big the words array needs to be.
-			wordCount++;
+			// text input handling
+			
+			
+			
 		}
 	}
-	
 	
 	
 	return 0;
