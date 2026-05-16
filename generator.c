@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdlib.h>
+#include <limits.h>
 
 #pragma pack(push, 1)
 
@@ -115,7 +116,12 @@ typedef struct {
 	char *excerpt;
 } ErrorInfo;
 
+
+// Define constants
+
 const int MARGIN_CAP = 1024; // How many pixels of margin are allowed in any one direction. Must be greater than 0 and less than INT_MAX.
+const int CHARACTER_PATH_LEN = 30; // Will break if realpathlen > this. This is simply the length of the char array.
+
 
 
 ErrorInfo applyMargins(int *margins, char *marginInfo) {
@@ -140,7 +146,7 @@ ErrorInfo applyMargins(int *margins, char *marginInfo) {
 	return errInfo;
 }
 
-ErrorInfo applyColor(uint32_t color, char *colorInfo) {
+ErrorInfo applyColor(uint32_t *color, char *colorInfo) {
 	ErrorInfo errInfo = (ErrorInfo) {ERR_NONE, ""};
 	
 	if (strlen(colorInfo) != 8) {
@@ -157,11 +163,28 @@ ErrorInfo applyColor(uint32_t color, char *colorInfo) {
 		return errInfo;
 	}
 	
-	color = colorCheck;
+	*color = colorCheck;
 	
 	return errInfo;
 }
 
+// convert a character from its input state to a string that is allowed for the filename
+// uses html names when possible
+char *charToFilename(char input) {
+	switch (input) {
+		case ' ': return "space";
+		case '"': return "quot";
+		case '\'': return "apos";
+		case '*': return "ast";
+		case '/': return "sol";
+		case ':': return "colon";
+		case '<': return "lt";
+		case '>': return "gt";
+		case '?': return "quest";
+		case '\\': return "bsol";
+		case '|': return "verbar";
+	}
+}
 
 void printerr(ErrorInfo info) {
 	switch (info.type) {
@@ -237,7 +260,7 @@ int main(int argc, char *argv[]) {
 				if (i == argc - 1) { // requires argument after
 					errInfo = (ErrorInfo) {ERR_COLOR_VALUE, ""};
 				} else {
-					errInfo = applyColor(fgColor, argv[i + 1]);
+					errInfo = applyColor(&fgColor, argv[i + 1]);
 				}
 				
 			} else if (strcmp(argv[i], "--bg") == 0) {
@@ -245,7 +268,7 @@ int main(int argc, char *argv[]) {
 				if (i == argc - 1) { // requires argument after
 					errInfo = (ErrorInfo) {ERR_COLOR_VALUE, ""};
 				} else {
-					errInfo = applyColor(bgColor, argv[i + 1]);
+					errInfo = applyColor(&bgColor, argv[i + 1]);
 				}
 				
 			} else {
@@ -263,7 +286,37 @@ int main(int argc, char *argv[]) {
 			// text input handling
 			
 			
+			//              top + charHeight + bot       left + allCharsWidth + right-1 (compensates for extra pixel after last char)
+			uint32_t pixels[margins[0] + 9 + margins[1]][margins[2] + strlen(argv[i])*6 + margins[3]-1];
 			
+			// initialize the pixel array to the background color
+			for (int row = 0; row < sizeof(pixels)/sizeof(pixels[0]); row++) {
+				for (int col = 0; col < sizeof(pixels[0])/sizeof(pixels[0][0]); col++) {
+					pixels[row][col] = bgColor;
+				}
+			}
+			
+			// insert fg color where character files indicate
+			for (int charID = 0; charID < strlen(argv[i]); charID++) {
+				char characterPath[CHARACTER_PATH_LEN];
+				strncpy(characterPath, "characters_", CHARACTER_PATH_LEN);
+				// subtract current characterPath length (with null) from total to get available space for the folder and file name
+				char folder[CHARACTER_PATH_LEN - strlen(characterPath) - 1];
+				
+				if (argv[i][charID] >= 'A' && argv[i][charID] <= 'Z') {
+					// this character is uppercase, so get the data from the uppercase folder
+					sprintf(folder, "upper/%c", argv[i][charID]);
+					strncat(characterPath, folder, CHARACTER_PATH_LEN - strlen(characterPath) - 1);
+				} else if (argv[i][charID] >= 'a' && argv[i][charID] <= 'z') {
+					// this character is lowercase, so get the data from the lowercase folder
+					sprintf(folder, "lower/%c", argv[i][charID]);
+					strncat(characterPath, folder, CHARACTER_PATH_LEN - strlen(characterPath) - 1);
+				} else {
+					// this character is a symbol, so get the data from the 'other' folder
+					sprintf(folder, "other/%s", charToFilename(argv[i][charID]));
+					strncat(characterPath, folder, CHARACTER_PATH_LEN - strlen(characterPath) - 1);
+				}
+			}
 		}
 	}
 	
